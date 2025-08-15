@@ -11,6 +11,9 @@ import importlib
 # ====== Load Logic Module Dynamically ======
 logic = importlib.import_module("logic")
 
+# Timezone
+IST = pytz.timezone("Asia/Kolkata")
+
 # ====== Custom UI Styling ======
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap" rel="stylesheet">
@@ -85,7 +88,7 @@ class BTCPriceTracker:
 
     def get_exact_candle_close(self, target_datetime):
         try:
-            end_time = int(target_datetime.replace(tzinfo=timezone.utc).timestamp())
+            end_time = int(target_datetime.astimezone(pytz.utc).timestamp())
             start_time = end_time - 60
             params = {
                 "symbol": self.symbol,
@@ -217,17 +220,17 @@ def create_options_chain_table(options):
 # ==============================
 def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
-    st.title("₿ BTC Price Tracker + Strategy Runner")
+    st.title("₿ BTC Price Tracker + Strategy Runner (All Times in IST)")
 
     # Strategy selection from logic.py
     selected_strategy = st.sidebar.selectbox("Select Strategy", list(logic.strategies.keys()))
 
     # Time control in sidebar
-    ist = pytz.timezone("Asia/Kolkata")
-    now_ist = datetime.now(ist).time()
-    st.sidebar.subheader("⏱ Strategy Time Control")
-    start_time = st.sidebar.time_input("Start Time (IST)", value=dtime(15, 0))  # 3:00 PM
-    end_time = st.sidebar.time_input("End Time (IST)", value=dtime(18, 0))      # 6:00 PM
+    now_ist = datetime.now(IST).time()
+    st.sidebar.subheader("⏱ Strategy Time Control (IST)")
+    start_time = st.sidebar.time_input("Start Time", value=dtime(15, 0))  # Default 3:00 PM IST
+    end_time = st.sidebar.time_input("End Time", value=dtime(18, 0))      # Default 6:00 PM IST
+    st.sidebar.write(f"🕒 Current Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}")
     run_now = start_time <= now_ist <= end_time
 
     # Load API keys
@@ -242,11 +245,13 @@ def main():
     # BTC Price
     tracker = BTCPriceTracker()
     current_price = tracker.get_current_price()
-    today = datetime.now()
-    am_time_utc = datetime(today.year, today.month, today.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
-    am_price = tracker.get_exact_candle_close(am_time_utc)
 
+    # 5:29 AM IST candle time
+    today_ist = datetime.now(IST)
+    am_time_ist = IST.localize(datetime(today_ist.year, today_ist.month, today_ist.day, 5, 29, 0))
+    am_price = tracker.get_exact_candle_close(am_time_ist)
     am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
+
     st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change else "N/A")
 
     # Options Chain
@@ -257,7 +262,14 @@ def main():
         chain_df['Call_Price'] = pd.to_numeric(chain_df['Call_Price'], errors='coerce')
         chain_df['Put_Price'] = pd.to_numeric(chain_df['Put_Price'], errors='coerce')
 
-        st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry})")
+        # Expiry time in IST
+        try:
+            expiry_dt_utc = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+            expiry_ist_str = expiry_dt_utc.astimezone(IST).strftime('%Y-%m-%d %H:%M:%S IST')
+        except:
+            expiry_ist_str = expiry
+
+        st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry_ist_str})")
         st.dataframe(chain_df, use_container_width=True)
 
         # Run strategy only in allowed time window
