@@ -147,7 +147,8 @@ class DeltaExchangeAPI:
 
 # Cache both BTC price & options for 15 sec
 @st.cache_data(ttl=15)
-def get_btc_price(tracker):
+def get_btc_price():
+    tracker = BTCPriceTracker()
     return tracker.get_current_price()
 
 @st.cache_data(ttl=15)
@@ -236,10 +237,10 @@ def main():
     run_now = True if always_on else start_time <= now_ist <= end_time
 
     # BTC Price
-    tracker = BTCPriceTracker()
-    current_price = get_btc_price(tracker)
+    current_price = get_btc_price()
 
     # Original working 5:29 AM UTC calculation
+    tracker = BTCPriceTracker()
     today = datetime.now()
     am_time_utc = datetime(today.year, today.month, today.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
     am_price = tracker.get_exact_candle_close(am_time_utc)
