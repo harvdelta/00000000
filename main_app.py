@@ -4,7 +4,8 @@ import pandas as pd
 import hmac
 import hashlib
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as dtime
+import pytz
 import importlib
 
 # ====== Load Logic Module Dynamically ======
@@ -221,6 +222,14 @@ def main():
     # Strategy selection from logic.py
     selected_strategy = st.sidebar.selectbox("Select Strategy", list(logic.strategies.keys()))
 
+    # Time control in sidebar
+    ist = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(ist).time()
+    st.sidebar.subheader("⏱ Strategy Time Control")
+    start_time = st.sidebar.time_input("Start Time (IST)", value=dtime(15, 0))  # 3:00 PM
+    end_time = st.sidebar.time_input("End Time (IST)", value=dtime(18, 0))      # 6:00 PM
+    run_now = start_time <= now_ist <= end_time
+
     # Load API keys
     try:
         api_key = st.secrets["delta_exchange"]["api_key"]
@@ -251,17 +260,19 @@ def main():
         st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry})")
         st.dataframe(chain_df, use_container_width=True)
 
-        # Run selected strategy
-        result = logic.run_strategy(chain_df, current_price, am_price, selected_strategy)
+        # Run strategy only in allowed time window
+        if run_now:
+            result = logic.run_strategy(chain_df, current_price, am_price, selected_strategy)
+            st.subheader("📢 Strategy Signal")
+            st.write(result.get("signal", "No signal output."))
 
-        st.subheader("📢 Strategy Signal")
-        st.write(result.get("signal", "No signal output."))
-
-        if result.get("details") is not None:
-            if isinstance(result["details"], pd.DataFrame):
-                st.dataframe(result["details"], use_container_width=True)
-            else:
-                st.dataframe(pd.DataFrame([result["details"]]), use_container_width=True)
+            if result.get("details") is not None:
+                if isinstance(result["details"], pd.DataFrame):
+                    st.dataframe(result["details"], use_container_width=True)
+                else:
+                    st.dataframe(pd.DataFrame([result["details"]]), use_container_width=True)
+        else:
+            st.warning(f"⏸ Strategy will run only between {start_time} and {end_time} IST. Current time: {now_ist}")
 
     else:
         st.warning("No BTC options data available.")
