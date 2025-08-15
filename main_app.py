@@ -7,6 +7,59 @@ import time
 from datetime import datetime, timedelta, timezone
 from logic import filter_otm_100_200  # Import custom logic
 
+# ====== Custom UI Styling ======
+st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap" rel="stylesheet">
+<style>
+/* Dark theme background */
+.stApp {
+    background-color: #0e1117;
+    color: white;
+    font-family: 'Source Code Pro', monospace;
+}
+
+/* DataFrame headers */
+thead tr th {
+    background-color: #1e1e1e !important;
+    color: #cccccc !important;
+}
+
+/* DataFrame cells */
+tbody tr td {
+    background-color: #0e1117 !important;
+    color: white !important;
+    font-family: 'Source Code Pro', monospace;
+}
+
+/* Positive values (green) */
+.green-cell {
+    background-color: #137333 !important;
+    color: white !important;
+    font-weight: bold;
+    text-align: right;
+}
+
+/* Negative values (red) */
+.red-cell {
+    background-color: #a50e0e !important;
+    color: white !important;
+    font-weight: bold;
+    text-align: right;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Highlight function for numeric values
+def highlight_values(val):
+    try:
+        if val > 0:
+            return 'background-color: #137333; color: white; font-weight: bold;'
+        elif val < 0:
+            return 'background-color: #a50e0e; color: white; font-weight: bold;'
+    except:
+        return ''
+    return ''
+
 # ==============================
 # BTC Tracker Functions
 # ==============================
