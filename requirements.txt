@@ -4,4 +4,6 @@ requests
 plotly
 streamlit-autorefresh
 
+streamlit-autorefresh
+
 
