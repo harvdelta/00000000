@@ -260,10 +260,27 @@ def main():
         # Apply Logic
         st.subheader("📢 OTM Calls & Puts ($100 - $200)")
         otm_calls, otm_puts = filter_otm_100_200(chain_df, current_price)
-        st.write("**OTM Calls**")
-        st.dataframe(otm_calls)
-        st.write("**OTM Puts**")
-        st.dataframe(otm_puts)
+
+        # Styled OTM Calls
+        if not otm_calls.empty:
+            styled_calls = otm_calls.style.format({
+                'Call_Price': '{:.2f}'
+            }).applymap(highlight_values, subset=['Call_Price'])
+            st.write("**OTM Calls**")
+            st.dataframe(styled_calls, use_container_width=True)
+        else:
+            st.write("No matching OTM Calls.")
+
+        # Styled OTM Puts
+        if not otm_puts.empty:
+            styled_puts = otm_puts.style.format({
+                'Put_Price': '{:.2f}'
+            }).applymap(highlight_values, subset=['Put_Price'])
+            st.write("**OTM Puts**")
+            st.dataframe(styled_puts, use_container_width=True)
+        else:
+            st.write("No matching OTM Puts.")
+
     else:
         st.warning("No BTC options data available.")
 
