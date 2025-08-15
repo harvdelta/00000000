@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone, time as dtime
 import pytz
 import importlib
-from streamlit import st_autorefresh  # ✅ Fixed import
+from streamlit_autorefresh import st_autorefresh  # ✅ Works when in requirements.txt
 
 # ====== Load Logic Module Dynamically ======
 logic = importlib.import_module("logic")
