@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone, time as dtime
 import pytz
 import importlib
+from streamlit_autorefresh import st_autorefresh
 
 # ====== Load Logic Module Dynamically ======
 logic = importlib.import_module("logic")
@@ -209,16 +210,21 @@ def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
     st.title("₿ BTC Price Tracker + Strategy Runner (IST Time)")
 
-    # Strategy selection from logic.py
+    # Auto-refresh every 15 seconds without flicker
+    st_autorefresh(interval=15000, key="data_refresh")
+
+    # Strategy selection
     selected_strategy = st.sidebar.selectbox("Select Strategy", list(logic.strategies.keys()))
 
-    # Time control in sidebar
+    # Time control
     now_ist = datetime.now(IST).time()
     st.sidebar.subheader("⏱ Strategy Time Control (IST)")
-    start_time = st.sidebar.time_input("Start Time", value=dtime(15, 0))  # 3 PM IST
-    end_time = st.sidebar.time_input("End Time", value=dtime(18, 0))      # 6 PM IST
+    always_on = st.sidebar.checkbox("Run Strategy 24/7", value=False)
+    start_time = st.sidebar.time_input("Start Time", value=dtime(15, 0))
+    end_time = st.sidebar.time_input("End Time", value=dtime(18, 0))
     st.sidebar.write(f"🕒 Current Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}")
-    run_now = start_time <= now_ist <= end_time
+
+    run_now = True if always_on else start_time <= now_ist <= end_time
 
     # Load API keys
     try:
@@ -233,17 +239,12 @@ def main():
     tracker = BTCPriceTracker()
     current_price = tracker.get_current_price()
 
-    # ✅ FIX: Use original working method for 5:29 AM IST price
+    # Original working 5:29 AM UTC calculation
     today = datetime.now()
     am_time_utc = datetime(today.year, today.month, today.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
     am_price = tracker.get_exact_candle_close(am_time_utc)
-
     am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
-    st.metric(
-        "Current BTC Futures Price",
-        f"${current_price:,.2f}",
-        delta=f"{am_change:+.2f}%" if am_change is not None else "N/A"
-    )
+    st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change is not None else "N/A")
 
     # Options Chain
     options, expiry = fetch_options_data(api_key, api_secret, base_url)
@@ -263,12 +264,11 @@ def main():
         st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry_ist_str})")
         st.dataframe(chain_df, use_container_width=True)
 
-        # Run strategy only in allowed time window
+        # Run strategy
         if run_now:
             result = logic.run_strategy(chain_df, current_price, am_price, selected_strategy)
             st.subheader("📢 Strategy Signal")
             st.write(result.get("signal", "No signal output."))
-
             if result.get("details") is not None:
                 if isinstance(result["details"], pd.DataFrame):
                     st.dataframe(result["details"], use_container_width=True)
