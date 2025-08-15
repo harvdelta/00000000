@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone, time as dtime
 import pytz
 import importlib
-from streamlit_autorefresh import st_autorefresh
+from streamlit.runtime.scriptrunner import st_autorefresh
 
 # ====== Load Logic Module Dynamically ======
 logic = importlib.import_module("logic")
@@ -145,7 +145,12 @@ class DeltaExchangeAPI:
     def get_tickers(self):
         return self._make_request("GET", "/v2/tickers")
 
-@st.cache_data(ttl=300)
+# Cache both BTC price & options for 15 sec
+@st.cache_data(ttl=15)
+def get_btc_price(tracker):
+    return tracker.get_current_price()
+
+@st.cache_data(ttl=15)
 def fetch_options_data(api_key, api_secret, base_url):
     api = DeltaExchangeAPI(api_key, api_secret, base_url)
     products_response = api.get_products()
@@ -210,7 +215,11 @@ def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
     st.title("₿ BTC Price Tracker + Strategy Runner (IST Time)")
 
-    # Auto-refresh every 15 seconds without flicker
+    # Manual Refresh Button
+    if st.sidebar.button("🔄 Manual Refresh"):
+        st.experimental_rerun()
+
+    # Auto-refresh every 15 seconds
     st_autorefresh(interval=15000, key="data_refresh")
 
     # Strategy selection
@@ -226,18 +235,9 @@ def main():
 
     run_now = True if always_on else start_time <= now_ist <= end_time
 
-    # Load API keys
-    try:
-        api_key = st.secrets["delta_exchange"]["api_key"]
-        api_secret = st.secrets["delta_exchange"]["api_secret"]
-        base_url = st.secrets["delta_exchange"].get("base_url", "https://api.india.delta.exchange")
-    except KeyError as e:
-        st.error(f"Missing secret: {e}")
-        st.stop()
-
     # BTC Price
     tracker = BTCPriceTracker()
-    current_price = tracker.get_current_price()
+    current_price = get_btc_price(tracker)
 
     # Original working 5:29 AM UTC calculation
     today = datetime.now()
@@ -247,7 +247,14 @@ def main():
     st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change is not None else "N/A")
 
     # Options Chain
-    options, expiry = fetch_options_data(api_key, api_secret, base_url)
+    options, expiry = fetch_options_data(api_key=st.secrets["delta_exchange"]["api_key"],
+                                         api_secret=st.secrets["delta_exchange"]["api_secret"],
+                                         base_url=st.secrets["delta_exchange"].get("base_url", "https://api.india.delta.exchange"))
+
+    # Last updated time in IST
+    last_updated = datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
+    st.caption(f"🕒 Last Updated: {last_updated}")
+
     if options:
         chain_df = create_options_chain_table(options)
         chain_df['Strike'] = pd.to_numeric(chain_df['Strike'], errors='coerce')
