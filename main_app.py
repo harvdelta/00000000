@@ -233,13 +233,17 @@ def main():
     tracker = BTCPriceTracker()
     current_price = tracker.get_current_price()
 
-    # FIX: 5:29 AM IST converted to UTC for API
-    today_ist = datetime.now(IST)
-    am_time_utc = datetime(today_ist.year, today_ist.month, today_ist.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
+    # ✅ FIX: Use original working method for 5:29 AM IST price
+    today = datetime.now()
+    am_time_utc = datetime(today.year, today.month, today.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
     am_price = tracker.get_exact_candle_close(am_time_utc)
 
     am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
-    st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change is not None else "N/A")
+    st.metric(
+        "Current BTC Futures Price",
+        f"${current_price:,.2f}",
+        delta=f"{am_change:+.2f}%" if am_change is not None else "N/A"
+    )
 
     # Options Chain
     options, expiry = fetch_options_data(api_key, api_secret, base_url)
