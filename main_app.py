@@ -48,19 +48,6 @@ tbody tr td {
 """, unsafe_allow_html=True)
 
 # ==============================
-# Helper Styling Function
-# ==============================
-def highlight_values(val):
-    try:
-        if val > 0:
-            return 'background-color: #137333; color: white; font-weight: bold;'
-        elif val < 0:
-            return 'background-color: #a50e0e; color: white; font-weight: bold;'
-    except:
-        return ''
-    return ''
-
-# ==============================
 # BTC Tracker
 # ==============================
 class BTCPriceTracker:
@@ -88,7 +75,7 @@ class BTCPriceTracker:
 
     def get_exact_candle_close(self, target_datetime):
         try:
-            end_time = int(target_datetime.astimezone(pytz.utc).timestamp())
+            end_time = int(target_datetime.replace(tzinfo=timezone.utc).timestamp())
             start_time = end_time - 60
             params = {
                 "symbol": self.symbol,
@@ -220,7 +207,7 @@ def create_options_chain_table(options):
 # ==============================
 def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
-    st.title("₿ BTC Price Tracker + Strategy Runner (All Times in IST)")
+    st.title("₿ BTC Price Tracker + Strategy Runner (IST Time)")
 
     # Strategy selection from logic.py
     selected_strategy = st.sidebar.selectbox("Select Strategy", list(logic.strategies.keys()))
@@ -228,8 +215,8 @@ def main():
     # Time control in sidebar
     now_ist = datetime.now(IST).time()
     st.sidebar.subheader("⏱ Strategy Time Control (IST)")
-    start_time = st.sidebar.time_input("Start Time", value=dtime(15, 0))  # Default 3:00 PM IST
-    end_time = st.sidebar.time_input("End Time", value=dtime(18, 0))      # Default 6:00 PM IST
+    start_time = st.sidebar.time_input("Start Time", value=dtime(15, 0))  # 3 PM IST
+    end_time = st.sidebar.time_input("End Time", value=dtime(18, 0))      # 6 PM IST
     st.sidebar.write(f"🕒 Current Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}")
     run_now = start_time <= now_ist <= end_time
 
@@ -246,13 +233,13 @@ def main():
     tracker = BTCPriceTracker()
     current_price = tracker.get_current_price()
 
-    # 5:29 AM IST candle time
+    # FIX: 5:29 AM IST converted to UTC for API
     today_ist = datetime.now(IST)
-    am_time_ist = IST.localize(datetime(today_ist.year, today_ist.month, today_ist.day, 5, 29, 0))
-    am_price = tracker.get_exact_candle_close(am_time_ist)
-    am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
+    am_time_utc = datetime(today_ist.year, today_ist.month, today_ist.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
+    am_price = tracker.get_exact_candle_close(am_time_utc)
 
-    st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change else "N/A")
+    am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
+    st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change is not None else "N/A")
 
     # Options Chain
     options, expiry = fetch_options_data(api_key, api_secret, base_url)
