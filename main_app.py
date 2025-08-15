@@ -5,41 +5,35 @@ import hmac
 import hashlib
 import time
 from datetime import datetime, timedelta, timezone
-from logic import filter_otm_100_200  # Import custom logic
+import importlib
+
+# ====== Load Logic Module Dynamically ======
+logic = importlib.import_module("logic")
 
 # ====== Custom UI Styling ======
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap" rel="stylesheet">
 <style>
-/* Dark theme background */
 .stApp {
     background-color: #0e1117;
     color: white;
     font-family: 'Source Code Pro', monospace;
 }
-
-/* DataFrame headers */
 thead tr th {
     background-color: #1e1e1e !important;
     color: #cccccc !important;
 }
-
-/* DataFrame cells */
 tbody tr td {
     background-color: #0e1117 !important;
     color: white !important;
     font-family: 'Source Code Pro', monospace;
 }
-
-/* Positive values (green) */
 .green-cell {
     background-color: #137333 !important;
     color: white !important;
     font-weight: bold;
     text-align: right;
 }
-
-/* Negative values (red) */
 .red-cell {
     background-color: #a50e0e !important;
     color: white !important;
@@ -49,7 +43,9 @@ tbody tr td {
 </style>
 """, unsafe_allow_html=True)
 
-# Highlight function for numeric values
+# ==============================
+# Helper Styling Function
+# ==============================
 def highlight_values(val):
     try:
         if val > 0:
@@ -61,7 +57,7 @@ def highlight_values(val):
     return ''
 
 # ==============================
-# BTC Tracker Functions
+# BTC Tracker
 # ==============================
 class BTCPriceTracker:
     def __init__(self, debug=False):
@@ -112,9 +108,8 @@ class BTCPriceTracker:
             return None
         return ((new_price - old_price) / old_price) * 100
 
-
 # ==============================
-# Options Chain Functions
+# Options Chain Fetch
 # ==============================
 class DeltaExchangeAPI:
     def __init__(self, api_key, api_secret, base_url="https://api.india.delta.exchange"):
@@ -158,7 +153,6 @@ class DeltaExchangeAPI:
     def get_tickers(self):
         return self._make_request("GET", "/v2/tickers")
 
-
 @st.cache_data(ttl=300)
 def fetch_options_data(api_key, api_secret, base_url):
     api = DeltaExchangeAPI(api_key, api_secret, base_url)
@@ -191,7 +185,6 @@ def fetch_options_data(api_key, api_secret, base_url):
 
     return nearest_expiry_options, nearest_expiry
 
-
 def create_options_chain_table(options):
     calls = [opt for opt in options if opt.get('contract_type') == 'call_options']
     puts = [opt for opt in options if opt.get('contract_type') == 'put_options']
@@ -218,15 +211,14 @@ def create_options_chain_table(options):
 
     return pd.DataFrame(chain_data)
 
-
 # ==============================
-# Main Streamlit App
+# Main App
 # ==============================
 def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
-    st.title("₿ BTC Price Tracker + Options Chain Viewer")
+    st.title("₿ BTC Price Tracker + Strategy Runner")
 
-    # Load secrets
+    # Load API keys
     try:
         api_key = st.secrets["delta_exchange"]["api_key"]
         api_secret = st.secrets["delta_exchange"]["api_secret"]
@@ -241,6 +233,7 @@ def main():
     today = datetime.now()
     am_time_utc = datetime(today.year, today.month, today.day, 5, 29, 0) - timedelta(hours=5, minutes=30)
     am_price = tracker.get_exact_candle_close(am_time_utc)
+
     am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
     st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change else "N/A")
 
@@ -248,8 +241,6 @@ def main():
     options, expiry = fetch_options_data(api_key, api_secret, base_url)
     if options:
         chain_df = create_options_chain_table(options)
-
-        # Convert to numeric to avoid comparison errors
         chain_df['Strike'] = pd.to_numeric(chain_df['Strike'], errors='coerce')
         chain_df['Call_Price'] = pd.to_numeric(chain_df['Call_Price'], errors='coerce')
         chain_df['Put_Price'] = pd.to_numeric(chain_df['Put_Price'], errors='coerce')
@@ -257,33 +248,19 @@ def main():
         st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry})")
         st.dataframe(chain_df, use_container_width=True)
 
-        # Apply Logic
-        st.subheader("📢 OTM Calls & Puts ($100 - $200)")
-        otm_calls, otm_puts = filter_otm_100_200(chain_df, current_price)
+        # Run strategy from logic.py dynamically
+        if hasattr(logic, "run_strategy"):
+            result = logic.run_strategy(chain_df, current_price, am_price)
+            st.subheader("📢 Strategy Signal")
+            st.write(result.get("signal", "No signal output."))
 
-        # Styled OTM Calls
-        if not otm_calls.empty:
-            styled_calls = otm_calls.style.format({
-                'Call_Price': '{:.2f}'
-            }).applymap(highlight_values, subset=['Call_Price'])
-            st.write("**OTM Calls**")
-            st.dataframe(styled_calls, use_container_width=True)
+            if result.get("details") is not None:
+                st.dataframe(pd.DataFrame([result["details"]]), use_container_width=True)
         else:
-            st.write("No matching OTM Calls.")
-
-        # Styled OTM Puts
-        if not otm_puts.empty:
-            styled_puts = otm_puts.style.format({
-                'Put_Price': '{:.2f}'
-            }).applymap(highlight_values, subset=['Put_Price'])
-            st.write("**OTM Puts**")
-            st.dataframe(styled_puts, use_container_width=True)
-        else:
-            st.write("No matching OTM Puts.")
+            st.error("No function 'run_strategy' found in logic.py. Please define it.")
 
     else:
         st.warning("No BTC options data available.")
-
 
 if __name__ == "__main__":
     main()
