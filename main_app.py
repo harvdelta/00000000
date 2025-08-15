@@ -4,10 +4,8 @@ import pandas as pd
 import hmac
 import hashlib
 import time
-import json
 from datetime import datetime, timedelta, timezone
-
-from logic import filter_otm_100_200  # Import your custom logic
+from logic import filter_otm_100_200  # Import custom logic
 
 # ==============================
 # BTC Tracker Functions
@@ -17,14 +15,13 @@ class BTCPriceTracker:
         self.base_url = "https://api.delta.exchange"
         self.symbol = "BTCUSDT"
         self.debug = debug
-        
         try:
             self.api_key = st.secrets["btc_tracker"]["DELTA_API_KEY"]
             self.api_secret = st.secrets["btc_tracker"]["DELTA_API_SECRET"]
         except KeyError as e:
             st.error(f"❌ Missing API credential: {e}")
             st.stop()
-    
+
     def get_current_price(self):
         try:
             url = f"{self.base_url}/v2/tickers/{self.symbol}"
@@ -71,7 +68,7 @@ class DeltaExchangeAPI:
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = base_url
-    
+
     def _generate_signature(self, method, endpoint, payload=""):
         timestamp = str(int(time.time()))
         message = method + timestamp + endpoint + payload
@@ -81,7 +78,7 @@ class DeltaExchangeAPI:
             hashlib.sha256
         ).hexdigest()
         return signature, timestamp
-    
+
     def _make_request(self, method, endpoint, params=None):
         url = f"{self.base_url}{endpoint}"
         payload = ""
@@ -101,10 +98,10 @@ class DeltaExchangeAPI:
         except Exception as e:
             st.error(f"API request failed: {str(e)}")
             return None
-    
+
     def get_products(self):
         return self._make_request("GET", "/v2/products")
-    
+
     def get_tickers(self):
         return self._make_request("GET", "/v2/tickers")
 
@@ -114,16 +111,16 @@ def fetch_options_data(api_key, api_secret, base_url):
     api = DeltaExchangeAPI(api_key, api_secret, base_url)
     products_response = api.get_products()
     tickers_response = api.get_tickers()
-    
+
     if not products_response or 'result' not in products_response:
         return None, None
-    
+
     products = products_response['result']
     ticker_data = {}
     if tickers_response and 'result' in tickers_response:
         for ticker in tickers_response['result']:
             ticker_data[ticker.get('symbol')] = ticker
-    
+
     options = []
     for product in products:
         if product.get('contract_type') in ['call_options', 'put_options'] and product.get('underlying_asset', {}).get('symbol') == 'BTC':
@@ -131,21 +128,21 @@ def fetch_options_data(api_key, api_secret, base_url):
             if symbol in ticker_data:
                 product.update(ticker_data[symbol])
             options.append(product)
-    
+
     if not options:
         return None, None
-    
+
     sorted_opts = sorted(options, key=lambda x: x.get('settlement_time', '9999'))
     nearest_expiry = sorted_opts[0].get('settlement_time')
     nearest_expiry_options = [opt for opt in sorted_opts if opt.get('settlement_time') == nearest_expiry]
-    
+
     return nearest_expiry_options, nearest_expiry
 
 
 def create_options_chain_table(options):
     calls = [opt for opt in options if opt.get('contract_type') == 'call_options']
     puts = [opt for opt in options if opt.get('contract_type') == 'put_options']
-    
+
     strikes = {}
     for call in calls:
         strike = call.get('strike_price', 0)
@@ -153,7 +150,7 @@ def create_options_chain_table(options):
     for put in puts:
         strike = put.get('strike_price', 0)
         strikes.setdefault(strike, {})['put'] = put
-    
+
     chain_data = []
     for strike in sorted(strikes.keys()):
         call_data = strikes[strike].get('call', {})
@@ -165,7 +162,7 @@ def create_options_chain_table(options):
             'Put_Symbol': put_data.get('symbol', ''),
             'Put_Price': put_data.get('mark_price', 0)
         })
-    
+
     return pd.DataFrame(chain_data)
 
 
@@ -175,7 +172,7 @@ def create_options_chain_table(options):
 def main():
     st.set_page_config(page_title="BTC Price & Options", layout="wide")
     st.title("₿ BTC Price Tracker + Options Chain Viewer")
-    
+
     # Load secrets
     try:
         api_key = st.secrets["delta_exchange"]["api_key"]
@@ -184,7 +181,7 @@ def main():
     except KeyError as e:
         st.error(f"Missing secret: {e}")
         st.stop()
-    
+
     # BTC Price
     tracker = BTCPriceTracker()
     current_price = tracker.get_current_price()
@@ -193,14 +190,20 @@ def main():
     am_price = tracker.get_exact_candle_close(am_time_utc)
     am_change = tracker.calculate_percentage_change(am_price, current_price) if am_price else None
     st.metric("Current BTC Futures Price", f"${current_price:,.2f}", delta=f"{am_change:+.2f}%" if am_change else "N/A")
-    
+
     # Options Chain
     options, expiry = fetch_options_data(api_key, api_secret, base_url)
     if options:
         chain_df = create_options_chain_table(options)
+
+        # Convert to numeric to avoid comparison errors
+        chain_df['Strike'] = pd.to_numeric(chain_df['Strike'], errors='coerce')
+        chain_df['Call_Price'] = pd.to_numeric(chain_df['Call_Price'], errors='coerce')
+        chain_df['Put_Price'] = pd.to_numeric(chain_df['Put_Price'], errors='coerce')
+
         st.subheader(f"BTC Options Chain (Nearest Expiry: {expiry})")
         st.dataframe(chain_df, use_container_width=True)
-        
+
         # Apply Logic
         st.subheader("📢 OTM Calls & Puts ($100 - $200)")
         otm_calls, otm_puts = filter_otm_100_200(chain_df, current_price)
@@ -210,6 +213,7 @@ def main():
         st.dataframe(otm_puts)
     else:
         st.warning("No BTC options data available.")
+
 
 if __name__ == "__main__":
     main()
